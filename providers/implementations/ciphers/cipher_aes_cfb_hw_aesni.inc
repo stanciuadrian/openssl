@@ -54,8 +54,9 @@ static int aes_cfb128_vaes_encdec_wrapper(
     if (dat->enc) {
         aes_cfb128_vaes_enc(in, out, len, dat->ks, dat->iv, &num);
     } else {
-        CRYPTO_cfb128_encrypt(in, out, len, dat->ks, dat->iv, &num, dat->enc,
-            dat->block);
+        aes_cfb128_vaes_dec(in, out, len, dat->ks, dat->iv, &num);
+        // CRYPTO_cfb128_encrypt(in, out, len, dat->ks, dat->iv, &num, dat->enc,
+        //     dat->block);
     }
 
     assert(num < 16);
