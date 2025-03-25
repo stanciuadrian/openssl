@@ -68,7 +68,7 @@ ___
 $code.=<<___;
 .globl  aes_cfb128_vaes_dec
 .type   aes_cfb128_vaes_dec,\@function,6
-.align  16
+.align  32
 aes_cfb128_vaes_dec:
 .cfi_startproc
     endbranch
@@ -187,6 +187,7 @@ $code.=<<___;
 
     lea 32($key_crt),$key_crt              # key points to the 2nd round key
     vpxord $rnd0key_zmm,$temp_zmm,$temp_zmm          # pre-whitening
+.balign 32
 .Loop_aesenc_mb4:
     vaesenc $rndNkey_zmm,$temp_zmm,$temp_zmm            # encrypt with current round key
     dec $rounds
@@ -206,7 +207,7 @@ $code.=<<___;
 
     vextracti64x2 \$3,$temp_zmm,$temp
 
-    jge .Loop_aes_cfb128_dec_main_loop_mb4
+    jae .Loop_aes_cfb128_dec_main_loop_mb4
 
     xor %eax,%eax                    # reset num when processing full blocks
 
@@ -242,6 +243,7 @@ $code.=<<___;
     vmovdqu 16($key_crt),$rndNkey    # load round 1 key
     lea 32($key_crt),$key_crt        # key points to the 2nd round key
     vpxor $rnd0key,$temp,$temp             # pre-whitening
+.balign 32
 .Loop_aesenc_mb1:
     aesenc $rndNkey,$temp            # encrypt with current round key
     dec $rounds
@@ -256,7 +258,7 @@ $code.=<<___;
     vmovdqu $temp,($out)             # write plaintext
     vmovdqu8 $cipher,$temp
     lea 16($out),$out                # out points to the next output block
-    jge .Loop_aes_cfb128_dec_main_loop_mb1
+    jae .Loop_aes_cfb128_dec_main_loop_mb1
 
     xor %eax,%eax                    # reset num when processing full blocks
 
@@ -280,6 +282,7 @@ $code.=<<___;
     lea 32($key_crt),$key_crt        # key points to the 2nd round key
     vpxor $rnd0key,$temp,$temp             # pre-whitening
 
+.balign 32
 .Loop_aesenc2:
     aesenc $rndNkey,$temp            # encrypt with current round key
     dec $rounds
@@ -322,3 +325,4 @@ ___
 print $code;
 
 close STDOUT or die "error closing STDOUT: $!";
+ 

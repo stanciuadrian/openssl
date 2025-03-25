@@ -47,7 +47,7 @@ $code=".text\n";
 $code.=<<___;
 .globl  aes_cfb128_vaes_enc
 .type   aes_cfb128_vaes_enc,\@function,6
-.align  16
+.align  32
 aes_cfb128_vaes_enc:
 .cfi_startproc
     endbranch
@@ -83,7 +83,7 @@ $code.=<<___;
     vmovdqu 16($key_crt),$rndNkey    # load round 1 key
     lea 32($key_crt),$key_crt        # $key_crt points to the 2nd round key
     vpxor $rnd0key,$temp,$temp       # AES pre-whitening
-
+.balign 32
 $aes_enc_loop_label:
     vaesenc $rndNkey,$temp,$temp     # AES encrypt with current round key
     dec $rounds
