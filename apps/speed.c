@@ -28,6 +28,12 @@
 #define OPENSSL_SUPPRESS_DEPRECATED
 #include "internal/e_os.h"
 
+#ifdef _MSC_VER
+    #include <intrin.h>
+#else
+    #include <x86intrin.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -155,11 +161,20 @@ static void alarmed(ossl_unused int sig)
     run = 0;
 }
 
+unsigned long long cycles_start;
+unsigned long long cycles_end;
+
 static double Time_F(int s)
 {
     double ret = app_tminterval(s, usertime);
-    if (s == STOP)
+
+    if (s == STOP) {
+        cycles_end = __rdtsc();
         alarm(0);
+    } else {
+        cycles_start = __rdtsc();
+    }
+
     return ret;
 }
 
@@ -4790,9 +4805,14 @@ static void print_result(int alg, int run_no, int count, double time_used)
         dofail();
         return;
     }
+
+    unsigned long long cycles = cycles_end - cycles_start;
+    double cycles_per_byte = (double)cycles / count / lengths[run_no];
+
     BIO_printf(bio_err,
-               mr ? "+R:%d:%s:%f\n"
-               : "%d %s ops in %.2fs\n", count, names[alg], time_used);
+               mr ? "+R:%d:%s:%f:%llu:%.2f\n"
+               : "%d %s ops in %.2fs %llucy %.2fcpb\n", count, names[alg], time_used, cycles, cycles_per_byte);
+
     results[alg][run_no] = ((double)count) / time_used * lengths[run_no];
 }
 
