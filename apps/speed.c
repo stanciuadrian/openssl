@@ -24,9 +24,18 @@
 
 #define MAX_ALGNAME_SUFFIX 100
 
+#define _GNU_SOURCE
+
 /* We need to use some deprecated APIs */
 #define OPENSSL_SUPPRESS_DEPRECATED
 #include "internal/e_os.h"
+
+#include <sched.h>
+#ifdef _MSC_VER
+    #include <intrin.h>
+#else
+    #include <x86intrin.h>
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -155,11 +164,20 @@ static void alarmed(ossl_unused int sig)
     run = 0;
 }
 
+static unsigned long long cycles_start;
+static unsigned long long cycles_stop;
+
 static double Time_F(int s)
 {
     double ret = app_tminterval(s, usertime);
-    if (s == STOP)
+
+    if (s == STOP) {
+        cycles_stop = __rdtsc();
         alarm(0);
+    } else {
+        cycles_start = __rdtsc();
+    }
+
     return ret;
 }
 
@@ -4790,9 +4808,14 @@ static void print_result(int alg, int run_no, int count, double time_used)
         dofail();
         return;
     }
+
+    unsigned long long cycles = cycles_stop - cycles_start;
+    double cycles_per_byte = (double)cycles / count / lengths[run_no];
+
     BIO_printf(bio_err,
-               mr ? "+R:%d:%s:%f\n"
-               : "%d %s ops in %.2fs\n", count, names[alg], time_used);
+               mr ? "+R:%d:%s:%f:%llu:%.2f\n"
+               : "%d %s ops in %.2fs %llucy %.2fcpb\n", count, names[alg], time_used, cycles, cycles_per_byte);
+
     results[alg][run_no] = ((double)count) / time_used * lengths[run_no];
 }
 
@@ -4846,6 +4869,23 @@ static int do_multi(int multi, int size_num)
     int status;
     static char sep[] = ":";
 
+    cpu_set_t get_affinity_mask;
+    CPU_ZERO(&get_affinity_mask);
+    if (sched_getaffinity(0, sizeof(cpu_set_t), &get_affinity_mask) == -1) {
+        BIO_printf(bio_err, "sched_getaffinity failed\n");
+        exit(1);
+    }
+    int packed_cpuids[CPU_SETSIZE];
+    int packed_cpuid_count = 0;
+    const int allowed_cpus = CPU_COUNT(&get_affinity_mask);
+    if (allowed_cpus == multi) {
+        printf("Number of CPUs corresponds to number of workers. Pinning!\n");
+        for (int i = 0; i < CPU_SETSIZE && packed_cpuid_count < allowed_cpus && packed_cpuid_count < CPU_SETSIZE; i++) {
+            if (CPU_ISSET(i, &get_affinity_mask))
+                packed_cpuids[packed_cpuid_count++] = i;
+        }
+    }
+
     fds = app_malloc(sizeof(*fds) * multi, "fd buffer for do_multi");
     for (n = 0; n < multi; ++n) {
         if (pipe(fd) == -1) {
@@ -4855,9 +4895,20 @@ static int do_multi(int multi, int size_num)
         fflush(stdout);
         (void)BIO_flush(bio_err);
         if (fork()) {
+            /* child */
+            if (packed_cpuid_count > 0 && n < packed_cpuid_count) { 
+                cpu_set_t set_affinity_mask;
+                CPU_ZERO(&set_affinity_mask);
+                CPU_SET(packed_cpuids[n], &set_affinity_mask);
+                if (sched_setaffinity(0, sizeof(set_affinity_mask), &set_affinity_mask) == -1) {
+                    BIO_printf(bio_err, "sched_setaffinity failed");
+                    exit(1);
+                }
+            }
             close(fd[1]);
             fds[n] = fd[0];
         } else {
+            /* parent */
             close(fd[0]);
             close(1);
             if (dup(fd[1]) == -1) {
